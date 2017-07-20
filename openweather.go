@@ -34,6 +34,19 @@ type ThreeHourForecast struct {
 	}
 }
 
+type DailyForecast struct {
+	Date        time.Time
+	Min         float64
+	Max         float64
+	Humidity    int
+	Description string
+	Icon        string
+	Wind        struct {
+		Speed  float64
+		Degree float64
+	}
+}
+
 type Session struct {
 	cli http.Client
 	key string
@@ -108,6 +121,59 @@ func (s *Session) ThreeHourForecast(q string, u Unit) ([]ThreeHourForecast, erro
 			}{
 				Speed:  e.Wind.Speed,
 				Degree: e.Wind.Deg,
+			},
+		})
+	}
+	return wfs, nil
+}
+
+func (s *Session) DailyForecast(q string, u Unit) ([]DailyForecast, error) {
+	ru := fmt.Sprintf(BASE+"/forecast/daily?APPID=%s&q=%s", s.key,
+		url.QueryEscape(q))
+	if u != Unit_Kelvin {
+		ru += "&units=" + string(u)
+	}
+	res, err := s.request("GET", ru, nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		List []struct {
+			Dt   int `json:"dt"`
+			Temp struct {
+				Min float64 `json:"min"`
+				Max float64 `json:"max"`
+			} `json:"temp"`
+			Humidity int `json:"humidity"`
+			Weather  []struct {
+				Description string `json:"description"`
+				Icon        string `json:"icon"`
+			} `json:"weather"`
+			Speed float64 `json:"speed"`
+			Deg   float64 `json:"deg"`
+		} `json:"list"`
+	}
+	err = json.NewDecoder(res.Body).Decode(&result)
+	res.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	wfs := make([]DailyForecast, 0, len(result.List))
+	for _, e := range result.List {
+		wfs = append(wfs, DailyForecast{
+			Date:        time.Unix(int64(e.Dt), 0),
+			Max:         e.Temp.Max,
+			Min:         e.Temp.Min,
+			Humidity:    e.Humidity,
+			Description: e.Weather[0].Description,
+			Icon: fmt.Sprintf("http://openweathermap.org/img/w/%s.png",
+				e.Weather[0].Icon),
+			Wind: struct {
+				Speed  float64
+				Degree float64
+			}{
+				Speed:  e.Speed,
+				Degree: e.Deg,
 			},
 		})
 	}
